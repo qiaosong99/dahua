@@ -22,4 +22,5 @@ server/public/
 # 临时/日志
 *.log
 *.tmp
+*.png
 Thumbs.db
