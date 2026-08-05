@@ -1,0 +1,23 @@
+{
+  "server": {
+    "port": 8443,
+    "httpPort": 8080,
+    "serverIp": "",
+    "visitPath": "/#/visit"
+  },
+  "admin": {
+    "password": "admin123"
+  },
+  "device": {
+    "host": "",
+    "port": 80,
+    "https": false,
+    "username": "admin",
+    "password": ""
+  },
+  "policy": {
+    "permissionHours": 24,
+    "weeklyCleanDay": 1,
+    "weeklyCleanHour": 3
+  }
+}

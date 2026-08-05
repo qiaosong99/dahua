@@ -1,0 +1,201 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --primary: #1664ff;
+  --primary-dark: #0f4fd6;
+  --bg: #f4f6fa;
+  --card: #ffffff;
+  --text: #1f2329;
+  --muted: #8a919f;
+  --danger: #e34d59;
+  --success: #00a870;
+  --border: #e5e8ef;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  min-height: 100%;
+}
+
+#app { min-height: 100vh; }
+
+.page {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 16px 16px 40px;
+}
+
+.page-wide {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px 16px 40px;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 4px rgba(20, 40, 80, 0.06);
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  padding: 14px 0 6px;
+}
+
+.page-sub {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.field { margin-bottom: 14px; }
+
+.field label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.field label .req { color: var(--danger); margin-right: 2px; }
+
+.field input[type=text],
+.field input[type=tel],
+.field input[type=password],
+.field input[type=date],
+.field select {
+  width: 100%;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 15px;
+  background: #fff;
+  outline: none;
+}
+
+.field input:focus, .field select:focus { border-color: var(--primary); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+  border: none;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  width: 100%;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+
+.btn:active { opacity: .85; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn-outline {
+  background: #fff;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+
+.btn-danger { background: var(--danger); }
+
+.btn-sm {
+  height: 34px;
+  font-size: 13px;
+  width: auto;
+  padding: 0 14px;
+  border-radius: 8px;
+}
+
+.msg {
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+.msg-error { background: #fdecee; color: var(--danger); }
+.msg-success { background: #e6f7f0; color: var(--success); }
+.msg-info { background: #e8f1ff; color: var(--primary-dark); }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.stat-card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(20, 40, 80, 0.06);
+}
+
+.stat-card .num { font-size: 26px; font-weight: 700; color: var(--primary); }
+.stat-card .label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+.tabs {
+  display: flex;
+  background: var(--card);
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 14px;
+}
+
+.tabs button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 9px 0;
+  font-size: 14px;
+  color: var(--muted);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tabs button.active { background: var(--primary); color: #fff; font-weight: 600; }
+
+.table-wrap { overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+th, td {
+  text-align: left;
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th { color: var(--muted); font-weight: 600; }
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 12px;
+}
+.tag-active { background: #e6f7f0; color: var(--success); }
+.tag-expired { background: #f2f3f5; color: var(--muted); }
+.tag-failed { background: #fdecee; color: var(--danger); }
+
+.row-flex { display: flex; gap: 10px; align-items: center; }
+.row-flex > * { flex: 1; }
+.row-flex > .fit { flex: 0 0 auto; }
+
+.text-muted { color: var(--muted); font-size: 13px; }
+.mt { margin-top: 12px; }
+.center { text-align: center; }

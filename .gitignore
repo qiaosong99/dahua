@@ -1,0 +1,25 @@
+# 运行环境（体积大，不入库；部署时放置 Node.js 与 Git）
+runtime/
+
+# 依赖
+node_modules/
+
+# 敏感配置（含密码），使用 config.example.json 复制生成
+server/config.json
+
+# 自签名证书私钥
+server/certs/
+
+# 访客照片与数据库
+server/photos/
+server/*.db
+server/*.db-wal
+server/*.db-shm
+
+# 构建产物（由 web 构建生成）
+server/public/
+
+# 临时/日志
+*.log
+*.tmp
+Thumbs.db
