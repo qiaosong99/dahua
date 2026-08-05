@@ -13,6 +13,18 @@
 const crypto = require('crypto');
 const { loadConfig } = require('./utils/configLoader');
 
+// 设备使用自签名证书，HTTPS 对接时需跳过证书校验
+// 创建专用 dispatcher，仅对设备请求生效
+let insecureDispatcher = null;
+function getDispatcher(device) {
+  if (!device.https) return undefined;
+  if (!insecureDispatcher) {
+    const { Agent } = require('undici');
+    insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+  }
+  return insecureDispatcher;
+}
+
 const md5 = (s) => crypto.createHash('md5').update(s, 'utf8').digest('hex').toLowerCase();
 
 function deviceUrl(device, pathname) {
@@ -20,7 +32,7 @@ function deviceUrl(device, pathname) {
   return `${scheme}://${device.host}:${device.port}${pathname}`;
 }
 
-async function postJson(url, body, session, timeoutMs = 15000) {
+async function postJson(url, body, session, timeoutMs = 15000, device = null) {
   const headers = {
     'Content-Type': 'application/json',
     'X-Request': 'JSON'
@@ -33,7 +45,8 @@ async function postJson(url, body, session, timeoutMs = 15000) {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: ctrl.signal
+      signal: ctrl.signal,
+      dispatcher: device ? getDispatcher(device) : undefined
     });
     const text = await res.text();
     let json = null;
@@ -51,7 +64,7 @@ async function rpcCall(device, method, params, session) {
     params: params || {},
     session: session || 0
   };
-  return postJson(deviceUrl(device, '/RPC2'), body, session);
+  return postJson(deviceUrl(device, '/RPC2'), body, session, 15000, device);
 }
 
 /**
@@ -134,7 +147,8 @@ async function cgiMultipart(device, session, cgiPath, jsonPart, imageBuffer) {
       method: 'POST',
       headers,
       body,
-      signal: ctrl.signal
+      signal: ctrl.signal,
+      dispatcher: getDispatcher(device)
     });
     const text = await res.text();
     let json = null;
