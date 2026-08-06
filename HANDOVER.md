@@ -49,6 +49,7 @@
 - Node.js（建议 ≥22；Node 24 需用 better-sqlite3@13.x，本仓库 package.json 已更新）
 - Java 21（Temurin 即可）
 - npm 安装依赖：`server/` 和 `web/` 各执行一次 `npm install --registry=https://registry.npmmirror.com`
+- 首次部署必须构建前端：`npm run build --prefix web`（产物输出到 server/public，不入库；不构建会提示“前端尚未构建”）
 
 ### 网关运行包（gateway/ 不入库，需重建）
 1. 安装 Maven 3.9.x（https://archive.apache.org/dist/maven/maven-3/ 下载解压即可）
