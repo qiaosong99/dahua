@@ -64,6 +64,7 @@
         <!-- 未开启摄像头 -->
         <div v-else class="center">
           <button class="btn btn-outline" @click="startCamera">打开前置摄像头拍摄</button>
+          <div v-if="cameraError" class="msg msg-error" style="margin-top:10px;text-align:left;">{{ cameraError }}</div>
           <div class="text-muted mt">
             无法打开摄像头？
             <label style="color:var(--primary);cursor:pointer;">
@@ -99,14 +100,19 @@ const cameraOn = ref(false);
 const capturing = ref(false);
 const photoData = ref('');
 const videoRef = ref(null);
+const cameraError = ref('');
 let stream = null;
 
 async function startCamera() {
   error.value = '';
+  cameraError.value = '';
+  // 非安全上下文（证书未受信任）时浏览器会禁用摄像头 API，给出明确指引
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    cameraError.value =
+      '当前环境无法调用摄像头：浏览器不信任本系统的自签名证书。请在手机设置中安装并信任证书后重新访问，或点击下方“直接拍照/选择照片”。';
+    return;
+  }
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('当前浏览器不支持摄像头调用，请使用 HTTPS 访问或点击下方"直接拍照"');
-    }
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
       audio: false
@@ -118,7 +124,11 @@ async function startCamera() {
       await videoRef.value.play().catch(() => {});
     }
   } catch (e) {
-    error.value = '无法打开摄像头：' + (e.message || e.name || '权限被拒绝') + '。可点击下方"直接拍照"。';
+    let tip;
+    if (e.name === 'NotAllowedError') tip = '相机权限被拒绝，请在浏览器设置中允许相机权限';
+    else if (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') tip = '未检测到可用的前置摄像头';
+    else tip = e.message || e.name || '权限被拒绝';
+    cameraError.value = '无法打开摄像头：' + tip + '。也可点击下方“直接拍照/选择照片”完成登记。';
   }
 }
 

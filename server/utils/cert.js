@@ -21,6 +21,36 @@ function getLanIps() {
   return ips;
 }
 
+/**
+ * 探测真正用于上网的网卡 IP（UDP 出网探测法）
+ * UDP connect 不实际发包，仅让内核选路由出接口，从而拿到 WiFi/热点网卡 IP，
+ * 自动规避直连门禁机等无外网的网卡（如 192.168.1.100）
+ * @returns {Promise<string|null>} 上网网卡 IP，探测失败返回 null
+ */
+function getPrimaryLanIp(timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    try {
+      const dgram = require('dgram');
+      const s = dgram.createSocket('udp4');
+      let finished = false;
+      const done = (ip) => {
+        if (finished) return;
+        finished = true;
+        try { s.close(); } catch (_) { /* ignore */ }
+        resolve(ip);
+      };
+      const timer = setTimeout(() => done(null), timeoutMs);
+      s.once('error', () => { clearTimeout(timer); done(null); });
+      s.connect(80, '8.8.8.8', () => {
+        clearTimeout(timer);
+        try { done(s.address().address); } catch (_) { done(null); }
+      });
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
 function ensureCert(configuredIp) {
   if (fs.existsSync(KEY_FILE) && fs.existsSync(CRT_FILE)) {
     return { key: fs.readFileSync(KEY_FILE), cert: fs.readFileSync(CRT_FILE) };
@@ -54,4 +84,4 @@ function ensureCert(configuredIp) {
   return { key: fs.readFileSync(KEY_FILE), cert: fs.readFileSync(CRT_FILE) };
 }
 
-module.exports = { ensureCert, getLanIps };
+module.exports = { ensureCert, getLanIps, getPrimaryLanIp };

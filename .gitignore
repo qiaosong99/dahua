@@ -10,6 +10,9 @@ server/config.json
 # 自签名证书私钥
 server/certs/
 
+# 导出的手机安装证书（由 server/certs 生成）
+visitor-access-cert.cer
+
 # 访客照片与数据库
 server/photos/
 server/*.db

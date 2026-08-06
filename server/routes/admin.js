@@ -5,7 +5,7 @@ const { db } = require('../db');
 const dahua = require('../dahuaService');
 const { loadConfig } = require('../utils/configLoader');
 const { clearPhotos, photoCount } = require('../utils/photoCleaner');
-const { getLanIps } = require('../utils/cert');
+const { getLanIps, getPrimaryLanIp } = require('../utils/cert');
 
 const router = express.Router();
 
@@ -106,15 +106,19 @@ router.post('/photos/clear', auth, (req, res) => {
 });
 
 // ---------- 访客登记二维码 ----------
-function getVisitUrl() {
+async function getVisitUrl() {
   const cfg = loadConfig();
-  const ip = cfg.server.serverIp || getLanIps()[0] || 'localhost';
+  // 优先用配置的 serverIp；否则自动探测真正上网的网卡（WiFi/热点），
+  // 规避直连门禁机的有线网卡；最后兜底取第一个局域网 IP
+  let ip = cfg.server.serverIp;
+  if (!ip) ip = await getPrimaryLanIp();
+  if (!ip) ip = getLanIps()[0] || 'localhost';
   return `https://${ip}:${cfg.server.port}${cfg.server.visitPath}`;
 }
 
 router.get('/qrcode', auth, async (req, res) => {
   try {
-    const url = getVisitUrl();
+    const url = await getVisitUrl();
     const buf = await QRCode.toBuffer(url, { width: 480, margin: 2 });
     res.type('png').send(buf);
   } catch (e) {
@@ -122,8 +126,8 @@ router.get('/qrcode', auth, async (req, res) => {
   }
 });
 
-router.get('/qrcode/url', auth, (req, res) => {
-  res.json({ ok: true, url: getVisitUrl() });
+router.get('/qrcode/url', auth, async (req, res) => {
+  res.json({ ok: true, url: await getVisitUrl() });
 });
 
 // ---------- 设备连通性测试 ----------

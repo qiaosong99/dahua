@@ -8,7 +8,7 @@
     <div class="tabs">
       <button :class="{ active: tab === 'overview' }" @click="tab = 'overview'">概览</button>
       <button :class="{ active: tab === 'records' }" @click="tab = 'records'">访客记录</button>
-      <button :class="{ active: tab === 'qrcode' }" @click="tab = 'qrcode'">访客二维码</button>
+      <button :class="{ active: tab === 'qrcode' }" @click="openQrTab()">访客二维码</button>
       <button :class="{ active: tab === 'settings' }" @click="tab = 'settings'">维护</button>
     </div>
 
@@ -83,8 +83,10 @@
         <img v-if="qrUrl" :src="qrUrl" style="width:260px;max-width:80%;" />
         <div class="text-muted mt">{{ visitUrl }}</div>
         <div class="row-flex mt">
+          <button class="btn btn-outline" @click="loadQr">刷新二维码</button>
           <a class="btn btn-outline" :href="qrUrl" download="访客登记二维码.png">下载二维码</a>
         </div>
+        <div class="text-muted mt" style="font-size:12px;">网络/IP 变化后点此重新生成，二维码会自动指向当前上网 IP</div>
       </div>
     </template>
 
@@ -178,7 +180,7 @@ async function testDevice() {
 async function loadQr() {
   try {
     const token = getToken();
-    const res = await fetch('/api/admin/qrcode', { headers: { Authorization: 'Bearer ' + token } });
+    const res = await fetch('/api/admin/qrcode?t=' + Date.now(), { headers: { Authorization: 'Bearer ' + token } });
     if (res.ok) {
       const blob = await res.blob();
       qrUrl.value = URL.createObjectURL(blob);
@@ -186,6 +188,12 @@ async function loadQr() {
     const u = await request('/api/admin/qrcode/url');
     visitUrl.value = u.url || '';
   } catch (_) { /* ignore */ }
+}
+
+// 切到二维码页时自动重新加载，保证二维码始终指向当前 IP
+function openQrTab() {
+  tab.value = 'qrcode';
+  loadQr();
 }
 
 async function clearPhotos() {
