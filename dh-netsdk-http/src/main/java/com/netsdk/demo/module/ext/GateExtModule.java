@@ -19,6 +19,29 @@ public class GateExtModule {
     public static volatile String lastFaceError = null;
 
     /**
+     * 同步设备时间为服务器当前时间（设备时间不准会导致开门记录时间错位）
+     *
+     * @param loginHandle 登录句柄
+     * @return true:成功 false:失败
+     */
+    public static boolean syncDeviceTime(NetSDKLib.LLong loginHandle) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        NetSDKLib.NET_TIME t = new NetSDKLib.NET_TIME();
+        t.dwYear = cal.get(java.util.Calendar.YEAR);
+        t.dwMonth = cal.get(java.util.Calendar.MONTH) + 1;
+        t.dwDay = cal.get(java.util.Calendar.DAY_OF_MONTH);
+        t.dwHour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+        t.dwMinute = cal.get(java.util.Calendar.MINUTE);
+        t.dwSecond = cal.get(java.util.Calendar.SECOND);
+        t.write();
+        boolean ret = LoginModule.netsdk.CLIENT_SetupDeviceTime(loginHandle, t);
+        if (!ret) {
+            System.err.println("同步设备时间失败 " + ToolKits.getErrorCodePrint());
+        }
+        return ret;
+    }
+
+    /**
      * 添加卡（支持多门通道）
      *
      * @param cardNo         卡号
@@ -802,7 +825,14 @@ public class GateExtModule {
         byte[] userIdBytes = userId.getBytes();
         System.arraycopy(userIdBytes, 0, stIn.szUserID, 0, Math.min(userIdBytes.length, stIn.szUserID.length));
         if (userName != null && !userName.isEmpty()) {
-            com.netsdk.lib.ToolKits.StringToByteArray(userName, stIn.stuFaceInfo.szUserName);
+            // 大华设备按 GBK 解析中文姓名，必须用 GBK 编码写入，否则设备端显示乱码
+            try {
+                byte[] nameBytes = userName.getBytes("GBK");
+                int len = Math.min(nameBytes.length, stIn.stuFaceInfo.szUserName.length - 1);
+                System.arraycopy(nameBytes, 0, stIn.stuFaceInfo.szUserName, 0, len);
+            } catch (Exception e) {
+                com.netsdk.lib.ToolKits.StringToByteArray(userName, stIn.stuFaceInfo.szUserName);
+            }
         }
         // 图片数据需分配 native 内存，并保证在调用期间不被 GC 回收
         com.sun.jna.Memory mem = new com.sun.jna.Memory(imageBytes.length);

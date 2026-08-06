@@ -54,11 +54,10 @@
         <!-- 摄像头实时取景 -->
         <div v-else-if="cameraOn" class="camera-box">
           <video ref="videoRef" autoplay playsinline muted></video>
-          <div class="face-guide"></div>
           <div class="camera-bar">
             <button class="shutter" :disabled="capturing" @click="capture"></button>
           </div>
-          <div class="text-muted center" style="margin-top:8px;">请将面部对准取景框，光线充足</div>
+          <div class="text-muted center" style="margin-top:8px;">请将整张脸放入画面内，光线充足</div>
         </div>
 
         <!-- 未开启摄像头 -->
@@ -114,7 +113,7 @@ async function startCamera() {
   }
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', aspectRatio: { ideal: 3 / 4 }, width: { ideal: 720 } },
+      video: { facingMode: 'user' },
       audio: false
     });
     cameraOn.value = true;
@@ -140,11 +139,11 @@ function stopCamera() {
   cameraOn.value = false;
 }
 
-/** 将 canvas 压缩为 ≤200KB 的 JPEG dataURL（大华设备要求 10KB~200KB） */
+/** 将 canvas 压缩为 ≤100KB 的 JPEG dataURL（NetSDK 下发上限） */
 function compressToJpeg(canvas) {
   let quality = 0.9;
   let dataUrl = canvas.toDataURL('image/jpeg', quality);
-  while (dataUrl.length > 200 * 1024 * 1.37 && quality > 0.3) {
+  while (dataUrl.length > 100 * 1024 * 1.37 && quality > 0.3) {
     quality -= 0.15;
     dataUrl = canvas.toDataURL('image/jpeg', quality);
   }
@@ -158,19 +157,14 @@ function capture() {
     const video = videoRef.value;
     const vw = video.videoWidth, vh = video.videoHeight;
     if (!vw || !vh) { error.value = '摄像头尚未就绪，请稍候再试'; return; }
-    // 居中裁剪为竖向 3:4
-    const targetRatio = 3 / 4;
-    let sw = vw, sh = vh, sx = 0, sy = 0;
-    if (vw / vh > targetRatio) {
-      sw = vh * targetRatio; sx = (vw - sw) / 2;
-    } else {
-      sh = vw / targetRatio; sy = (vh - sh) / 2;
-    }
+    // 全帧截取（不裁切），长边缩放到 960 内
+    const maxSide = 960;
+    const scale = Math.min(1, maxSide / Math.max(vw, vh));
     const canvas = document.createElement('canvas');
-    const outW = 480, outH = 640;
+    const outW = Math.round(vw * scale), outH = Math.round(vh * scale);
     canvas.width = outW; canvas.height = outH;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, outW, outH);
+    ctx.drawImage(video, 0, 0, outW, outH);
     photoData.value = compressToJpeg(canvas);
     stopCamera();
   } finally {
@@ -248,27 +242,13 @@ onBeforeUnmount(() => stopCamera());
   border-radius: 10px;
   overflow: hidden;
   background: #000;
-  aspect-ratio: 3 / 4;
 }
 
 .camera-box video {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
   display: block;
   transform: scaleX(-1);
-}
-
-.face-guide {
-  position: absolute;
-  left: 50%;
-  top: 42%;
-  width: 58%;
-  aspect-ratio: 3 / 4;
-  transform: translate(-50%, -50%);
-  border: 2px dashed rgba(255, 255, 255, 0.85);
-  border-radius: 50%;
-  pointer-events: none;
 }
 
 .camera-bar {

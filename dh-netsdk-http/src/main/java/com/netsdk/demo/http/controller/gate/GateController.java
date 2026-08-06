@@ -210,13 +210,25 @@ public class GateController extends BaseDeviceController {
         return resp;
     }
 
-    @Operation(summary = "设备连通性测试", description = "仅登录设备验证连通性（请求头登录成功即返回成功）")
+    @Operation(summary = "设备连通性测试", description = "仅登录设备验证连通性（请求头登录成功即返回成功），同时自动校准设备时间")
     @GetMapping("/ping")
     public CommonResponse<String> ping() {
+        // 连通性测试时顺便校准设备时间，保证开门记录时间与真实时间一致
+        GateExtModule.syncDeviceTime(loginHandleHolder.get());
         CommonResponse<String> resp = new CommonResponse<>();
         resp.setSuccess(true);
         resp.setMessage("设备登录成功");
         resp.setData("ok");
+        return resp;
+    }
+
+    @Operation(summary = "同步设备时间", description = "将设备时间校准为服务器当前时间")
+    @PostMapping("/syncTime")
+    public CommonResponse<Void> syncTime() {
+        boolean result = GateExtModule.syncDeviceTime(loginHandleHolder.get());
+        CommonResponse<Void> resp = new CommonResponse<>();
+        resp.setSuccess(result);
+        resp.setMessage(result ? "设备时间已同步" : "设备时间同步失败");
         return resp;
     }
 
@@ -238,6 +250,8 @@ public class GateController extends BaseDeviceController {
             resp.setMessage("imageBase64 解码失败: " + e.getMessage());
             return resp;
         }
+        // 下发前校准设备时间，保证开门记录时间与真实时间一致（尽力而为，失败不阻断）
+        GateExtModule.syncDeviceTime(loginHandleHolder.get());
         // 1. 创建用户（普通用户，有效期放宽为1年，到期由业务侧调用 deleteUserFace 回收）
         NetSDKLib.NET_ACCESS_USER_INFO userInfo = new NetSDKLib.NET_ACCESS_USER_INFO();
         com.netsdk.lib.ToolKits.StringToByteArray(req.getUserId(), userInfo.szUserID);

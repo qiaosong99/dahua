@@ -53,18 +53,21 @@
             <thead>
               <tr>
                 <th>姓名</th><th>手机号</th><th>来访目的</th><th>状态</th>
+                <th>首次刷脸</th><th>最近刷脸</th>
                 <th>授权时间</th><th>到期时间</th><th>登记时间</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!rows.length">
-                <td colspan="7" class="center text-muted" style="padding:20px;">暂无记录</td>
+                <td colspan="9" class="center text-muted" style="padding:20px;">暂无记录</td>
               </tr>
               <tr v-for="r in rows" :key="r.id">
                 <td>{{ r.name }}</td>
                 <td>{{ r.phone }}</td>
                 <td>{{ r.purpose }}</td>
                 <td><span class="tag" :class="'tag-' + r.status">{{ statusText(r) }}</span></td>
+                <td>{{ r.firstScanAt ? shortTime(r.firstScanAt) : '-' }}</td>
+                <td>{{ r.lastScanAt ? shortTime(r.lastScanAt) : '-' }}</td>
                 <td>{{ r.granted_at || '-' }}</td>
                 <td>{{ r.expire_at || '-' }}</td>
                 <td>{{ r.created_at }}</td>
@@ -130,6 +133,12 @@ function statusText(r) {
   if (r.status === 'expired') return '已到期';
   if (r.device_removed) return '已到期';
   return '权限有效';
+}
+
+// 'yyyy-MM-dd HH:mm:ss' → 'MM-dd HH:mm'（表格内紧凑展示）
+function shortTime(t) {
+  const m = String(t).match(/^(\d{4})-(\d{2}-\d{2}) (\d{2}:\d{2})/);
+  return m ? `${m[2]} ${m[3]}` : t;
 }
 
 async function loadStats() {

@@ -1,0 +1,26 @@
+# FRP 客户端配置（内网穿透）
+# 填写你的 frps 服务端信息后，start.bat 启动时会自动拉起 frpc
+# 服务端搭建参考：https://github.com/fatedier/frp
+
+serverAddr = ""          # frps 服务端 IP 或域名，例如 "1.2.3.4"（留空则不启动穿透）
+serverPort = 7000        # frps 的 bindPort
+
+auth:
+  method = "token"
+  token = ""             # 与 frps 端 auth.token 一致
+
+# 将本系统 HTTPS 服务穿透到公网（TCP 直穿）
+# 启动成功后访问 https://<服务器公网IP>:<remotePort>/#/visit
+[[proxies]]
+name = "visitor-access-https"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8443
+remotePort = 8443        # frps 公网侧放行此端口（安全组/防火墙）
+
+# 说明：
+# 1. 手机首次访问会提示证书不安全：iOS 点"显示详细信息→访问此网站"，
+#    或在手机安装并信任 visitor-access-cert.cer 后无警告
+# 2. 穿透成功后，在管理端"访客二维码"页点"刷新二维码"，
+#    并把 config.json 的 server.serverIp 改为公网地址（IP:端口 形式），二维码即指向公网
+# 3. 若 frps 侧有域名+受信任证书，建议改用 frps 终结 HTTPS（vhostHTTPS），可免证书警告

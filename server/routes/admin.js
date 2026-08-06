@@ -63,24 +63,50 @@ router.get('/stats', auth, (req, res) => {
 });
 
 // ---------- 访客报告 ----------
-router.get('/report', auth, (req, res) => {
+router.get('/report', auth, async (req, res) => {
   const { start, end, q, format } = req.query;
   const where = [];
   const params = [];
   if (start) { where.push('created_at >= ?'); params.push(`${start} 00:00:00`); }
   if (end) { where.push('created_at <= ?'); params.push(`${end} 23:59:59`); }
   if (q) { where.push('(name LIKE ? OR phone LIKE ? OR purpose LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
-  const sql = `SELECT id, name, phone, purpose, status, granted_at, expire_at, device_removed, face_removed, created_at
+  const sql = `SELECT id, name, phone, purpose, status, granted_at, expire_at, device_user_id, device_removed, face_removed, created_at
     FROM visitors ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY created_at DESC LIMIT 1000`;
   const rows = db.prepare(sql).all(...params);
 
+  // 从门禁机拉取开门记录，按 device_user_id 匹配出每位访客的刷脸时间（网关不可达时降级为空）
+  const fmtLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  const now = new Date();
+  // 设备时钟可能不准，查询窗口前后各放宽 2 天；匹配以用户ID为准，不影响结果正确性
+  const baseStart = start ? new Date(`${start} 00:00:00`).getTime() : now.getTime() - 30 * 86400 * 1000;
+  const baseEnd = end ? new Date(`${end} 23:59:59`).getTime() : now.getTime();
+  const recStart = fmtLocal(new Date(baseStart - 2 * 86400 * 1000));
+  const recEnd = fmtLocal(new Date(baseEnd + 2 * 86400 * 1000));
+  const records = await dahua.getOpenDoorRecords(recStart, recEnd, 500);
+  const scanMap = new Map();
+  for (const r of records) {
+    if (!r.userId) continue;
+    const m = scanMap.get(r.userId) || { firstScanAt: r.eventTime, lastScanAt: r.eventTime, scanCount: 0 };
+    if (r.eventTime < m.firstScanAt) m.firstScanAt = r.eventTime;
+    if (r.eventTime > m.lastScanAt) m.lastScanAt = r.eventTime;
+    m.scanCount += 1;
+    scanMap.set(r.userId, m);
+  }
+  for (const row of rows) {
+    const s = scanMap.get(row.device_user_id || '');
+    row.firstScanAt = s ? s.firstScanAt : '';
+    row.lastScanAt = s ? s.lastScanAt : '';
+    row.scanCount = s ? s.scanCount : 0;
+  }
+
   if (format === 'csv') {
     const statusMap = { active: '权限有效', expired: '已到期', failed: '下发失败' };
-    const header = 'ID,姓名,手机号,来访目的,状态,授权时间,到期时间,设备权限已回收,照片已清理,登记时间';
+    const header = 'ID,姓名,手机号,来访目的,状态,首次刷脸时间,最近刷脸时间,授权时间,到期时间,设备权限已回收,照片已清理,登记时间';
     const lines = rows.map((r) => [
       r.id, r.name, r.phone, r.purpose,
       statusMap[r.status] || r.status,
+      r.firstScanAt || '', r.lastScanAt || '',
       r.granted_at || '', r.expire_at || '',
       r.device_removed ? '是' : '否',
       r.face_removed ? '是' : '否',

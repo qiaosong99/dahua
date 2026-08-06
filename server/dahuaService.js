@@ -170,4 +170,30 @@ async function removeFaceUser(userId) {
   return toResult(r, '设备人脸权限已回收');
 }
 
-module.exports = { testConnection, addFaceUser, removeFaceUser };
+/**
+ * 查询设备开门记录（刷脸记录）
+ * @param {string} start 'yyyy-MM-dd HH:mm:ss'
+ * @param {string} end   'yyyy-MM-dd HH:mm:ss'
+ * @param {number} pageSize 分页大小
+ * @returns {Promise<Array<{userId:string,eventTime:string,result:number}>>} 失败时返回空数组（不阻断报表）
+ */
+async function getOpenDoorRecords(start, end, pageSize = 200) {
+  try {
+    const gw = ensureConfigured();
+    const r = await gatewayCall(gw, 'POST', '/gate/getOpenDoorRecords', {
+      start, end, cardNo: '', pageNum: 1, pageSize
+    }, 20000);
+    if (r.json && r.json.success && Array.isArray(r.json.data)) {
+      return r.json.data.map((d) => ({
+        userId: String(d.userId || ''),
+        eventTime: d.eventTime || '',
+        result: d.result
+      }));
+    }
+    return [];
+  } catch (_) {
+    return [];
+  }
+}
+
+module.exports = { testConnection, addFaceUser, removeFaceUser, getOpenDoorRecords };
