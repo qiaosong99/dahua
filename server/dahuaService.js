@@ -1,53 +1,65 @@
 /**
- * 大华设备对接抽象层 (DH-ASI7213X-T)
+ * 大华设备对接抽象层 (DH-ASI7213X-T) —— NetSDK 网关版
  *
- * 通过设备 HTTP 协议对接：
- *   1. global.login 登录设备（支持明文密码与 digest 摘要两种认证）
- *   2. userManager.addUserInfo 添加用户
- *   3. faceInfoServer.cgi 下发人脸照片
- *   4. userManager.deleteUserInfo 删除用户（同时清除人脸凭证）
+ * 设备固件关闭了 HTTP /RPC2 接口，因此通过 dh-netsdk-http 网关（Java/NetSDK）对接：
+ *   1. GET  /gate/ping          登录设备验证连通性
+ *   2. POST /gate/addUserFace   创建用户并下发人脸（失败自动回滚）
+ *   3. POST /gate/deleteUserFace 删除人脸凭证并删除用户
  *
- * 所有方法统一返回 { ok: boolean, message: string }，
- * 若真机联调时 HTTP 协议不可用，可在本层替换为 NetSDK 网关实现，业务代码无需改动。
+ * 网关请求需携带设备凭据头（AES 加密密码 + epoch 微秒时间戳，防重放）。
+ * 所有方法统一返回 { ok: boolean, message: string }，业务代码无需感知网关细节。
  */
 const crypto = require('crypto');
+const net = require('net');
 const { loadConfig } = require('./utils/configLoader');
 
-// 设备使用自签名证书，HTTPS 对接时需跳过证书校验
-// 创建专用 dispatcher，仅对设备请求生效
-let insecureDispatcher = null;
-function getDispatcher(device) {
-  if (!device.https) return undefined;
-  if (!insecureDispatcher) {
-    const { Agent } = require('undici');
-    insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
-  }
-  return insecureDispatcher;
-}
+const DEFAULT_GATEWAY_URL = 'http://127.0.0.1:8090/dh-netsdk';
+const DEFAULT_AES_KEY = 'NetSDK1234567890';
+const DEFAULT_NETSDK_PORT = 37777;
 
-const md5 = (s) => crypto.createHash('md5').update(s, 'utf8').digest('hex').toLowerCase();
-
-function deviceUrl(device, pathname) {
-  const scheme = device.https ? 'https' : 'http';
-  return `${scheme}://${device.host}:${device.port}${pathname}`;
-}
-
-async function postJson(url, body, session, timeoutMs = 15000, device = null) {
-  const headers = {
-    'Content-Type': 'application/json',
-    'X-Request': 'JSON'
+function getGatewayCfg() {
+  const cfg = loadConfig();
+  const gw = cfg.gateway || {};
+  return {
+    url: (gw.url || DEFAULT_GATEWAY_URL).replace(/\/$/, ''),
+    aesKey: gw.aesKey || DEFAULT_AES_KEY,
+    devicePort: gw.devicePort || DEFAULT_NETSDK_PORT,
+    device: cfg.device || {}
   };
-  if (session) headers['X-Subject'] = `session=${session}`;
+}
+
+/**
+ * 生成网关要求的设备凭据请求头
+ * Dh-Device-Password = AES-128-ECB/PKCS5 加密 "密码|epoch微秒时间戳" 后 Base64
+ */
+function buildDeviceHeaders(gw) {
+  const ts = String(Date.now() * 1000);
+  const cipher = crypto.createCipheriv('aes-128-ecb', Buffer.from(gw.aesKey, 'utf8'), null);
+  const enc = Buffer.concat([
+    cipher.update(`${gw.device.password}|${ts}`, 'utf8'),
+    cipher.final()
+  ]).toString('base64');
+  return {
+    'Dh-Device-Ip': gw.device.host,
+    'Dh-Device-User': gw.device.username || 'admin',
+    'Dh-Device-Password': enc,
+    'Dh-Device-Timestamp': ts,
+    'Dh-Device-Port': String(gw.devicePort)
+  };
+}
+
+async function gatewayCall(gw, method, path, body, timeoutMs = 20000) {
+  const headers = { ...buildDeviceHeaders(gw) };
+  const opts = { method, headers };
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  opts.signal = ctrl.signal;
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-      dispatcher: device ? getDispatcher(device) : undefined
-    });
+    const res = await fetch(`${gw.url}${path}`, opts);
     const text = await res.text();
     let json = null;
     try { json = JSON.parse(text); } catch (_) { /* 非 JSON 响应 */ }
@@ -57,115 +69,39 @@ async function postJson(url, body, session, timeoutMs = 15000, device = null) {
   }
 }
 
-async function rpcCall(device, method, params, session) {
-  const body = {
-    method,
-    id: Math.floor(Math.random() * 100000) + 1,
-    params: params || {},
-    session: session || 0
-  };
-  return postJson(deviceUrl(device, '/RPC2'), body, session, 15000, device);
-}
-
-/**
- * 登录设备，返回 session id
- * 兼容多种固件：明文密码 + 多种 clientType，失败时回退 digest 摘要认证
- */
-async function login(device) {
-  // 第一步：尝试明文密码登录（多种 clientType 兼容不同固件）
-  let lastErr = null;
-  for (const clientType of ['Dahua3.0-Web3.0', 'NetSDK']) {
-    const r = await rpcCall(device, 'global.login', {
-      userName: device.username,
-      password: device.password,
-      clientType,
-      loginType: 'Direct'
-    });
-    if (r.json && r.json.result === true && r.json.session) {
-      return r.json.session;
-    }
-    lastErr = r;
-    // 需要摘要认证时不再尝试其他 clientType
-    const err = r.json && r.json.error;
-    if (err && (err.code === 401 || err.code === 403) && err.params) break;
-  }
-
-  // 第二步：摘要认证（设备返回 401 + realm/random）
-  const err = lastErr && lastErr.json && lastErr.json.error;
-  if (err && (err.code === 401 || err.code === 403) && err.params) {
-    const realm = err.params.realm;
-    const randomization = err.params.randomization || err.params.random;
-    if (realm && randomization) {
-      const hash1 = md5(`${device.username}:${realm}:${device.password}`);
-      const digest = md5(`${device.username}:${randomization}:${hash1}`);
-      const r = await rpcCall(device, 'global.login', {
-        userName: device.username,
-        password: digest,
-        clientType: 'Dahua3.0-Web3.0'
-      });
-      if (r.json && r.json.result === true && r.json.session) {
-        return r.json.session;
-      }
-      lastErr = r;
-    }
-  }
-
-  const msg = lastErr && lastErr.json && lastErr.json.error
-    ? `code=${lastErr.json.error.code} ${lastErr.json.error.message || ''}`
-    : ((lastErr && lastErr.text) || '').slice(0, 200);
-  throw new Error(`设备登录失败: ${msg}`);
-}
-
-/**
- * 以 multipart 方式调用设备 CGI 接口
- */
-async function cgiMultipart(device, session, cgiPath, jsonPart, imageBuffer) {
-  const boundary = '----visitorAccess' + Date.now().toString(36);
-  const head = Buffer.from(
-    `--${boundary}\r\n` +
-    'Content-Disposition: form-data; name="FaceInfoRecord"\r\n' +
-    'Content-Type: text/json\r\n\r\n' +
-    JSON.stringify(jsonPart) + '\r\n' +
-    `--${boundary}\r\n` +
-    'Content-Disposition: form-data; name="image"; filename="face.jpg"\r\n' +
-    'Content-Type: image/jpeg\r\n\r\n',
-    'utf8'
-  );
-  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
-  const body = Buffer.concat([head, imageBuffer, tail]);
-
-  const headers = {
-    'Content-Type': `multipart/form-data; boundary=${boundary}`,
-    'Accept': 'application/json'
-  };
-  if (session) headers['X-Subject'] = `session=${session}`;
-
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);
-  try {
-    const res = await fetch(deviceUrl(device, cgiPath), {
-      method: 'POST',
-      headers,
-      body,
-      signal: ctrl.signal,
-      dispatcher: getDispatcher(device)
-    });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch (_) { /* ignore */ }
-    return { status: res.status, json, text };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 function ensureConfigured() {
-  const cfg = loadConfig();
-  const d = cfg.device;
-  if (!d || !d.host) {
+  const gw = getGatewayCfg();
+  if (!gw.device || !gw.device.host) {
     throw new Error('门禁机未配置：请先在 server/config.json 中填写 device.host 等参数');
   }
-  return d;
+  if (!gw.device.password) {
+    throw new Error('门禁机密码未配置：请填写 device.password');
+  }
+  return gw;
+}
+
+async function tcpProbe(host, port, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const s = new net.Socket();
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; s.destroy(); resolve(v); } };
+    s.setTimeout(timeoutMs);
+    s.once('connect', () => finish(true));
+    s.once('timeout', () => finish(false));
+    s.once('error', () => finish(false));
+    s.connect(port, host);
+  });
+}
+
+/**
+ * 解析网关响应为统一的 { ok, message }
+ */
+function toResult(r, okMsgPrefix) {
+  if (r.json && typeof r.json.success === 'boolean') {
+    return { ok: r.json.success, message: r.json.message || (r.json.success ? okMsgPrefix : '操作失败') };
+  }
+  // HTTP 400 通常为请求头校验/设备登录失败，网关直接返回文本原因
+  return { ok: false, message: (r.text || `HTTP ${r.status}`).slice(0, 300) };
 }
 
 /**
@@ -173,118 +109,65 @@ function ensureConfigured() {
  */
 async function testConnection() {
   try {
-    const device = ensureConfigured();
-    // 先做 TCP 层探测，给出更明确的诊断信息
-    const net = require('net');
-    const open = await new Promise((resolve) => {
-      const s = new net.Socket();
-      let done = false;
-      const finish = (v) => { if (!done) { done = true; s.destroy(); resolve(v); } };
-      s.setTimeout(3000);
-      s.once('connect', () => finish(true));
-      s.once('timeout', () => finish(false));
-      s.once('error', () => finish(false));
-      s.connect(device.port, device.host);
-    });
-    if (!open) {
+    const gw = ensureConfigured();
+    // 先探测网关进程是否存活
+    const gwHost = new URL(gw.url).hostname;
+    const gwPort = new URL(gw.url).port || 80;
+    const gwAlive = await tcpProbe(gwHost, gwPort);
+    if (!gwAlive) {
       return {
         ok: false,
-        message: `无法连接到门禁机 ${device.host}:${device.port}（TCP 超时）。请检查设备网线是否接入与服务器同一局域网、设备是否通电启动、IP 是否正确`
+        message: `无法连接 NetSDK 网关 ${gwHost}:${gwPort}。请先启动网关：java -jar gateway\\dh-netsdk-http.jar`
       };
     }
-    const session = await login(device);
-    // 查询设备信息验证会话可用
-    const r = await rpcCall(device, 'magicBox.getSystemInfo', {}, session);
-    await logoutQuietly(device, session);
-    const info = r.json && r.json.params ? r.json.params : null;
-    return {
-      ok: true,
-      message: `连接成功${info && info.machine ? '，设备型号: ' + info.machine : ''}${info && info.softWareVersion ? '，固件: ' + info.softWareVersion : ''}`
-    };
+    // 探测设备 NetSDK 端口
+    const devAlive = await tcpProbe(gw.device.host, gw.devicePort);
+    if (!devAlive) {
+      return {
+        ok: false,
+        message: `无法连接到门禁机 ${gw.device.host}:${gw.devicePort}（TCP 超时）。请检查设备网线是否接入、设备是否通电、IP 是否正确；若链路正常但 ping 不通，可尝试给设备断电重启`
+      };
+    }
+    const r = await gatewayCall(gw, 'GET', '/gate/ping');
+    const result = toResult(r, '连接成功');
+    if (result.ok) {
+      result.message = `连接成功（NetSDK 登录设备正常）`;
+    } else {
+      result.message = `设备登录失败: ${result.message}（请核对 config.json 中 device.username/password）`;
+    }
+    return result;
   } catch (e) {
     const m = e.message || String(e);
     const hint = /fetch failed|ETIMEDOUT|ECONNREFUSED|ECONNRESET|abort/i.test(m)
-      ? '（网络层失败：请确认设备与服务器在同一局域网且 HTTP 服务已开启）'
+      ? '（网络层失败：请确认网关已启动、设备与服务器网络可达）'
       : '';
     return { ok: false, message: m + hint };
   }
-}
-
-async function logoutQuietly(device, session) {
-  try { await rpcCall(device, 'global.logout', {}, session); } catch (_) { /* ignore */ }
 }
 
 /**
  * 添加访客用户 + 下发人脸
  * @param {string} userId 设备用户ID（如 V1730000000000）
  * @param {string} name 姓名
- * @param {Buffer} imageBuffer JPEG 照片
+ * @param {Buffer} imageBuffer JPEG 照片（≤100KB）
  */
 async function addFaceUser(userId, name, imageBuffer) {
-  const device = ensureConfigured();
-  const session = await login(device);
-  try {
-    // 1. 添加用户信息
-    const addRes = await rpcCall(device, 'userManager.addUserInfo', {
-      userInfo: {
-        UserID: userId,
-        Name: name,
-        UserType: 'General',
-        Gender: 'Unknown',
-        DoorRight: '1',
-        RightPlan: [{ DoorNo: 1, PlanTemplateNo: '1' }]
-      }
-    }, session);
-    if (!addRes.json || addRes.json.result !== true) {
-      const em = addRes.json && addRes.json.error
-        ? `code=${addRes.json.error.code} ${addRes.json.error.message || ''}`
-        : (addRes.text || '').slice(0, 200);
-      throw new Error(`添加用户信息失败: ${em}`);
-    }
-
-    // 2. 下发人脸照片
-    const faceRes = await cgiMultipart(device, session, '/cgi-bin/faceInfoServer.cgi', {
-      Action: 'AddUserFace',
-      Info: {
-        UserID: userId,
-        Name: name,
-        GroupID: 1
-      }
-    }, imageBuffer);
-    if (faceRes.status !== 200 || (faceRes.json && faceRes.json.result === false)) {
-      const em = faceRes.json && faceRes.json.error
-        ? `code=${faceRes.json.error.code} ${faceRes.json.error.message || ''}`
-        : (faceRes.text || '').slice(0, 200);
-      // 回滚：删除刚建的用户
-      try {
-        await rpcCall(device, 'userManager.deleteUserInfo', { UserID: userId }, session);
-      } catch (_) { /* ignore */ }
-      throw new Error(`下发人脸失败: ${em}`);
-    }
-    return { ok: true, message: '人脸权限下发成功' };
-  } finally {
-    await logoutQuietly(device, session);
-  }
+  const gw = ensureConfigured();
+  const r = await gatewayCall(gw, 'POST', '/gate/addUserFace', {
+    userId,
+    name,
+    imageBase64: imageBuffer.toString('base64')
+  }, 60000);
+  return toResult(r, '人脸权限下发成功');
 }
 
 /**
  * 删除访客用户（同时清除设备上的人脸凭证）
  */
 async function removeFaceUser(userId) {
-  const device = ensureConfigured();
-  const session = await login(device);
-  try {
-    const r = await rpcCall(device, 'userManager.deleteUserInfo', { UserID: userId }, session);
-    if (!r.json || r.json.result !== true) {
-      const em = r.json && r.json.error
-        ? `code=${r.json.error.code} ${r.json.error.message || ''}`
-        : (r.text || '').slice(0, 200);
-      throw new Error(`删除设备用户失败: ${em}`);
-    }
-    return { ok: true, message: '设备人脸权限已回收' };
-  } finally {
-    await logoutQuietly(device, session);
-  }
+  const gw = ensureConfigured();
+  const r = await gatewayCall(gw, 'POST', '/gate/deleteUserFace', { userId }, 30000);
+  return toResult(r, '设备人脸权限已回收');
 }
 
 module.exports = { testConnection, addFaceUser, removeFaceUser };

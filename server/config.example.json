@@ -15,6 +15,11 @@
     "username": "admin",
     "password": ""
   },
+  "gateway": {
+    "url": "http://127.0.0.1:8090/dh-netsdk",
+    "aesKey": "NetSDK1234567890",
+    "devicePort": 37777
+  },
   "policy": {
     "permissionHours": 24,
     "weeklyCleanDay": 1,

@@ -19,6 +19,12 @@ server/*.db-shm
 # 构建产物（由 web 构建生成）
 server/public/
 
+# NetSDK 网关运行包（jar+DLL 体积大，由 dh-netsdk-http 执行 mvn clean package -Phttp 后自行复制生成）
+gateway/
+
+# NetSDK 网关构建产物
+dh-netsdk-http/target/
+
 # 临时/日志
 *.log
 *.tmp
