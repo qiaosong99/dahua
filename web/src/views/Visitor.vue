@@ -114,7 +114,7 @@ async function startCamera() {
   }
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
+      video: { facingMode: 'user', aspectRatio: { ideal: 3 / 4 }, width: { ideal: 720 } },
       audio: false
     });
     cameraOn.value = true;
@@ -248,10 +248,13 @@ onBeforeUnmount(() => stopCamera());
   border-radius: 10px;
   overflow: hidden;
   background: #000;
+  aspect-ratio: 3 / 4;
 }
 
 .camera-box video {
   width: 100%;
+  height: 100%;
+  object-fit: cover;
   display: block;
   transform: scaleX(-1);
 }
@@ -269,6 +272,10 @@ onBeforeUnmount(() => stopCamera());
 }
 
 .camera-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   justify-content: center;
   padding: 12px 0;
