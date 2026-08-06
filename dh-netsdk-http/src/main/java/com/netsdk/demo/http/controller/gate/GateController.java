@@ -259,12 +259,22 @@ public class GateController extends BaseDeviceController {
             return resp;
         }
         // 2. 下发人脸
-        boolean faceOk = GateExtModule.addFaceInfo(loginHandleHolder.get(), req.getUserId(), imageBytes);
+        boolean faceOk = GateExtModule.addFaceInfo(loginHandleHolder.get(), req.getUserId(), req.getName(), imageBytes);
         if (!faceOk) {
             // 回滚：删除刚创建的用户
             GateExtModule.deleteUser(loginHandleHolder.get(), req.getUserId().getBytes());
+            // 透传 SDK 错误，便于前端展示具体原因
+            String sdkErr = GateExtModule.lastFaceError;
+            String msg;
+            if (sdkErr != null && sdkErr.contains("1030")) {
+                msg = "照片未检测到合格人脸：请正对镜头、保证光线充足、人脸占画面大部分（摘掉口罩/墨镜），重新拍摄";
+            } else if (sdkErr != null && !sdkErr.isEmpty()) {
+                msg = "下发人脸失败：" + sdkErr.replaceAll("[\\r\\n]+", " ");
+            } else {
+                msg = "下发人脸失败（用户已回滚删除）";
+            }
             resp.setSuccess(false);
-            resp.setMessage("下发人脸失败（用户已回滚删除）");
+            resp.setMessage(msg);
             return resp;
         }
         resp.setSuccess(true);

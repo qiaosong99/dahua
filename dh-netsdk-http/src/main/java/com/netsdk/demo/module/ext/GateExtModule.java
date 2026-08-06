@@ -15,6 +15,9 @@ import java.util.List;
  */
 public class GateExtModule {
 
+    /** 最近一次人脸操作失败的 SDK 错误描述（供 HTTP 层透传） */
+    public static volatile String lastFaceError = null;
+
     /**
      * 添加卡（支持多门通道）
      *
@@ -788,9 +791,19 @@ public class GateExtModule {
      * @return true:成功 false:失败
      */
     public static boolean addFaceInfo(NetSDKLib.LLong loginHandle, String userId, byte[] imageBytes) {
+        return addFaceInfo(loginHandle, userId, null, imageBytes);
+    }
+
+    /**
+     * 添加人脸（带姓名）
+     */
+    public static boolean addFaceInfo(NetSDKLib.LLong loginHandle, String userId, String userName, byte[] imageBytes) {
         NetSDKLib.NET_IN_ADD_FACE_INFO stIn = new NetSDKLib.NET_IN_ADD_FACE_INFO();
         byte[] userIdBytes = userId.getBytes();
         System.arraycopy(userIdBytes, 0, stIn.szUserID, 0, Math.min(userIdBytes.length, stIn.szUserID.length));
+        if (userName != null && !userName.isEmpty()) {
+            com.netsdk.lib.ToolKits.StringToByteArray(userName, stIn.stuFaceInfo.szUserName);
+        }
         // 图片数据需分配 native 内存，并保证在调用期间不被 GC 回收
         com.sun.jna.Memory mem = new com.sun.jna.Memory(imageBytes.length);
         mem.write(0, imageBytes, 0, imageBytes.length);
@@ -805,6 +818,13 @@ public class GateExtModule {
                 stIn.getPointer(), stOut.getPointer(), 10000);
         stIn.read();
         stOut.read();
+        if (!ret) {
+            String err = ToolKits.getErrorCodePrint();
+            lastFaceError = err;
+            System.err.println("添加人脸失败 userId=" + userId + " size=" + imageBytes.length + "B " + err);
+        } else {
+            lastFaceError = null;
+        }
         return ret;
     }
 

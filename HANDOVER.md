@@ -97,7 +97,7 @@
 | 网关报"请求重放" | 每次请求必须用新的时间戳 |
 | DLL UnsatisfiedLinkError | DLL 未与 jar 同目录，或缺 VC++ 运行库 |
 | better-sqlite3 安装失败 | Node 24 需 better-sqlite3@13.x；安装加 `--registry=https://registry.npmmirror.com` |
-| 人脸下发被拒 | 换正面、光照均匀的真人照片（JPEG ≤100KB） |
+| 人脸下发被拒（SDK 1030 照片特征值提取失败） | 设备人脸质检未通过：正对镜头、光线充足、人脸占画面大部分、摘口罩/墨镜重拍；网关已将友好提示透传到访客页 |
 
 ## 七、网关接口协议（Node 后端已实现，供参考）
 
